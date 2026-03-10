@@ -18,82 +18,81 @@ app.post('/gerar-pix', async (req, res) => {
 
     console.log(`\n[+] Iniciando robô para o CPF: ${cpf}`);
     
-    // Deixando o navegador vísivel para testes
     const browser = await chromium.launch({ headless: false }); 
     const context = await browser.newContext({
-        // Adicionando um User-Agent real do Windows para ajudar no disfarce do Captcha
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     });
     
     const page = await context.newPage();
 
     try {
-        console.log("🌐 Acessando a página da prefeitura...");
-        await page.goto('https://palhoca.atende.net/autoatendimento/servicos/guias-de-iptu/detalhar/1', { waitUntil: 'networkidle' });
+        console.log("🌐 Acessando a página...");
+        // Não esperamos a rede ficar ociosa, apenas o esqueleto do site carregar
+        await page.goto('https://palhoca.atende.net/autoatendimento/servicos/guias-de-iptu/detalhar/1', { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-        console.log("🛡️ Iniciando caça aos pop-ups...");
+        console.log("💣 Injetando código para DESTRUIR pop-ups automaticamente...");
+        // A OPÇÃO NUCLEAR: Um script rodando no fundo do site deletando qualquer modal a cada meio segundo
+        await page.evaluate(() => {
+            setInterval(() => {
+                // Remove modais do jQuery UI, fundos escuros e banners
+                document.querySelectorAll('.ui-dialog, .ui-widget-overlay, .modal-backdrop, [role="dialog"], #cookie-bar, .cookie-consent').forEach(el => el.remove());
+                // Força a barra de rolagem voltar se o modal tiver travado a tela
+                document.body.style.overflow = 'auto';
+            }, 500);
+        });
+
+        console.log("⏳ Aguardando a tela liberar (se houver Captcha, você tem 90 segundos para resolver)...");
         
-        // Loop rápido (tenta 5 vezes com 1 segundo de intervalo) para caçar pop-ups empilhados
-        for (let i = 0; i < 5; i++) {
-            // 1. Tenta fechar modais estilo "Aviso" (jQuery UI)
-            try {
-                const btnXModal = page.locator('.ui-dialog-titlebar-close');
-                if (await btnXModal.isVisible({ timeout: 500 })) {
-                    await btnXModal.click();
-                    console.log(`✔️ Modal tipo 1 fechado na tentativa ${i+1}.`);
-                }
-            } catch (e) {}
-
-            // 2. Tenta fechar o pop-up "Nota Nacional" ou similares (procura pelo ícone X específico)
-            try {
-                // Esse seletor tenta achar o 'X' genérico do painel deles
-                const btnXGeneric = page.locator('button.close, .botao-fechar-modal, span:has-text("×"), [aria-label="Close"]');
-                if (await btnXGeneric.isVisible({ timeout: 500 })) {
-                    await btnXGeneric.click();
-                    console.log(`✔️ Modal genérico fechado na tentativa ${i+1}.`);
-                }
-            } catch (e) {}
-
-            // 3. Tenta aceitar os cookies
-            try {
-                const btnCookie = page.locator('button:has-text("Aceitar")');
-                if (await btnCookie.isVisible({ timeout: 500 })) {
-                    await btnCookie.click();
-                    console.log("✔️ Cookies aceitos.");
-                }
-            } catch (e) {}
-
-            await page.waitForTimeout(1000); // Pausa antes de tentar ver se abriu outro pop-up
-        }
-
-        console.log("⏳ Aguardando a liberação da interface...");
+        // Agora esperamos o campo select aparecer e estar livre de bloqueios
         const selectFiltro = page.locator('select[name="filtro"]');
+        await selectFiltro.waitFor({ state: 'attached', timeout: 90000 });
+
+        console.log("⚙️ Selecionando o filtro CPF/CNPJ...");
+        // Forçamos a seleção via JavaScript nativo para driblar qualquer bloqueio visual restante
+        await page.evaluate(() => {
+            const select = document.querySelector('select[name="filtro"]');
+            if (select) {
+                // Procura a opção CPF/CNPJ e seleciona
+                for (let i = 0; i < select.options.length; i++) {
+                    if (select.options[i].text.includes('CPF/CNPJ')) {
+                        select.selectedIndex = i;
+                        select.dispatchEvent(new Event('change', { bubbles: true }));
+                        break;
+                    }
+                }
+            }
+        });
         
-        // Se ainda assim travar, tentamos forçar o clique via JavaScript ignorando o que estiver na frente
-        await selectFiltro.waitFor({ state: 'attached', timeout: 30000 });
-        
-        console.log("⚙️ Selecionando o filtro CPF/CNPJ (Forçado)...");
-        await selectFiltro.selectOption({ label: 'CPF/CNPJ' }, { force: true });
-        
-        await page.waitForTimeout(500);
+        await page.waitForTimeout(1000); // Pausa para o site processar a mudança do filtro
 
         console.log(`⌨️ Digitando o CPF...`);
-        // Force: true faz o Playwright digitar mesmo se o campo estiver visualmente coberto
-        await page.locator('input[name="campo01"]').fill(cpf, { force: true });
+        // Preenchemos via injeção direta de valor
+        await page.evaluate((cpfDigitado) => {
+            const input = document.querySelector('input[name="campo01"]');
+            if (input) {
+                input.value = cpfDigitado;
+                input.dispatchEvent(new Event('input', { bubbles: true }));
+                input.dispatchEvent(new Event('change', { bubbles: true }));
+            }
+        }, cpf);
+
+        await page.waitForTimeout(500);
 
         console.log("🔍 Clicando em Consultar...");
-        await page.locator('input[name="consultar"]').click({ force: true });
+        await page.evaluate(() => {
+            const btn = document.querySelector('input[name="consultar"]');
+            if (btn) btn.click();
+        });
 
         console.log("⏳ Aguardando resultado carregar (10 segundos)...");
         await page.waitForTimeout(10000); 
 
-        res.json({ sucesso: true, status: 'Busca enviada.' });
+        res.json({ sucesso: true, status: 'Busca enviada com sucesso!' });
 
     } catch (error) {
         console.error('\n❌ Erro crítico:', error.message);
         res.status(500).json({ erro: 'Falha ao buscar os dados na prefeitura.' });
     } finally {
-        // Comentado temporariamente para o navegador NÃO fechar e você poder ver onde o robô parou
         // await browser.close(); 
     }
 });
