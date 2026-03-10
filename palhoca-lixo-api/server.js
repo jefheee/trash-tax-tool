@@ -1,17 +1,9 @@
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
-const { chromium } = require('playwright-extra');
-const stealth = require('puppeteer-extra-plugin-stealth')();
-
-chromium.use(stealth);
 
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-// Define onde o navegador vai salvar a memória (cookies, captchas resolvidos)
-const userDataDir = path.join(__dirname, 'browser_data');
 
 app.post('/gerar-pix', async (req, res) => {
     const { cpf } = req.body;
@@ -20,88 +12,40 @@ app.post('/gerar-pix', async (req, res) => {
         return res.status(400).json({ erro: 'CPF é obrigatório.' });
     }
 
-    console.log(`\n[+] Iniciando robô (Sessão Persistente) para o CPF: ${cpf}`);
-    
-    let context;
+    console.log(`\n[+] Consultando API da Prefeitura direto no backend para o CPF: ${cpf}`);
+
+    // A URL bizarra da prefeitura
+    const url = "https://palhoca.atende.net/autoatendimento/servicos/embed/data/eyJpZCI6ImVsLWlhMmI0ZWZhMjA2IiwiY29kaWdvIjoiNDkiLCJ0aXBvIjoiMSIsInBhcmFtZXRybyI6e30sImNoYXZlIjp7fSwicHJveHkiOnRydWV9/servicos/guias-de-iptu/detalhar/atende.php?rot=61072&aca=101&ajax=t&processo=processaDados&ajaxPrevent=1773184378170&registros=17&pagina=0&selecionar=false&contaRegistros=true&totalizaRegistros=false&nivelArvore=null";
+
+    // O payload URL-encoded com o SEU CPF injetado no meio
+    const payload = `chave=%7B%22sercodigo%22%3A%2249%22%2C%22sertipo%22%3A%221%22%2C%22servicos%22%3A%22guias-de-iptu%22%2C%22detalhar%22%3A%221%22%2C%22janelaAutoId%22%3A%221%22%2C%22selecionar%22%3Afalse%2C%22selecionar_multipla%22%3Afalse%2C%22permiteAcaoSelecionar%22%3Afalse%7D&caller=null&parametro=%7B%22chaveAutoatendimento%22%3Atrue%2C%22sercodigo%22%3A%2249%22%2C%22sertipo%22%3A%221%22%2C%22servicos%22%3A%22guias-de-iptu%22%2C%22detalhar%22%3A%221%22%2C%22janelaAutoId%22%3A%221%22%2C%22selecionar%22%3Afalse%2C%22selecionar_multipla%22%3Afalse%2C%22permiteAcaoSelecionar%22%3Afalse%2C%22__identificadores%22%3A%5B%5D%2C%22__filtros_consulta_padrao%22%3A%5B%7B%22filtroCampo%22%3A%22formaPagamentoAVista%22%2C%22filtroTipo%22%3A%22%3D%22%2C%22filtroValor%22%3A%22%22%2C%22filtroValor02%22%3A%22%22%2C%22filtroTipoCampo%22%3A%22booleano%22%2C%22filtroPodeSalvar%22%3A%22true%22%2C%22filtroEncoded%22%3Afalse%7D%2C%7B%22filtroCampo%22%3A%22formaPagamentoParcelado%22%2C%22filtroTipo%22%3A%22%3D%22%2C%22filtroValor%22%3A%22%22%2C%22filtroValor02%22%3A%22%22%2C%22filtroTipoCampo%22%3A%22booleano%22%2C%22filtroPodeSalvar%22%3A%22true%22%2C%22filtroEncoded%22%3Afalse%7D%2C%7B%22filtroCampo%22%3A%22lancamentoContribuinteCpfCnpj%22%2C%22filtroTipo%22%3A%22%3D%22%2C%22filtroValor%22%3A%22${cpf}%22%2C%22filtroValor02%22%3A%22%22%2C%22filtroTipoCampo%22%3A%22cpf_cnpj%22%7D%5D%2C%22__order_consulta_padrao%22%3A%5B%7B%22order%22%3A%22lancamentoAno%22%2C%22orderT%22%3A%22asc%22%2C%22tipo%22%3A1%7D%2C%7B%22order%22%3A%22lancamentoNumero%22%2C%22orderT%22%3A%22asc%22%2C%22tipo%22%3A1%7D%2C%7B%22order%22%3A%22formaPagamentoAno%22%2C%22orderT%22%3A%22asc%22%2C%22tipo%22%3A1%7D%2C%7B%22order%22%3A%22formaPagamentoCodigo%22%2C%22orderT%22%3A%22asc%22%2C%22tipo%22%3A1%7D%2C%7B%22order%22%3A%22formaPagamentoSequencia%22%2C%22orderT%22%3A%22asc%22%2C%22tipo%22%3A1%7D%2C%7B%22order%22%3A%22parcela%22%2C%22orderT%22%3A%22asc%22%2C%22tipo%22%3A1%7D%5D%2C%22nome_consulta%22%3A%22consulta_padrao%22%2C%22_proxy%22%3A%7B%22Rotina%22%3A35045%2C%22Acao%22%3A101%2C%22AutoId%22%3A1%2C%22exigeCaptcha%22%3A%221%22%2C%22caminho%22%3A%22%22%7D%2C%22campos_consulta%22%3A%5B%22lancamentoNumero%22%2C%22lancamentoAno%22%2C%22lancamentoNumeroAno%22%2C%22lancamentoSubReceitaCodigo%22%2C%22lancamentoSubReceitaDescricao%22%2C%22formaPagamentoCodigo%22%2C%22formaPagamentoAno%22%2C%22formaPagamentoSequencia%22%2C%22formaPagamentoSituacao%22%2C%22formaPagamentoOrdem%22%2C%22formapagamentoDescricao%22%2C%22lancamentoMoedaSigla%22%2C%22lancamentoContribuinteCpfCnpj%22%2C%22cpfCnpjValido%22%2C%22lancamentoCadbciCadastro%22%2C%22inscricaoImob%22%2C%22parcela%22%2C%22parcelaDataVencimentoOuProrrogacao%22%2C%22valorAtualizadoComDesconto%22%2C%22parcelaSituacao%22%2C%22bainome%22%2C%22lognome%22%2C%22bennumero%22%2C%22enderecoImovel%22%2C%22data_hora_emissao%22%2C%22lancamentoSubReceitaParmiteGuiaUnica%22%2C%22convenioParaEmissao%22%5D%2C%22dados_agrupador%22%3A%5B%7B%22nome%22%3A%5B%22lancamentoSubReceitaCodigo%22%5D%2C%22descritivo%22%3A%5B%7B%22nome%22%3A%22lancamentoSubReceitaDescricao%22%2C%22mostraTitulo%22%3Atrue%2C%22quebraLinha%22%3Afalse%2C%22visivel%22%3Atrue%7D%5D%2C%22tipo%22%3A3%2C%22descricaoAgrupamentoNulo%22%3A%22%22%2C%22icone%22%3Anull%2C%22iconesAgrupamento%22%3A%5B%5D%2C%22tipoIcone%22%3Anull%2C%22condicionais%22%3Anull%7D%2C%7B%22nome%22%3A%5B%22lancamentoCadbciCadastro%22%5D%2C%22descritivo%22%3A%5B%7B%22nome%22%3A%22lancamentoCadbciCadastro%22%2C%22mostraTitulo%22%3Atrue%2C%22quebraLinha%22%3Afalse%2C%22visivel%22%3Atrue%7D%2C%7B%22nome%22%3A%22enderecoImovel%22%2C%22mostraTitulo%22%3Atrue%2C%22quebraLinha%22%3Afalse%2C%22visivel%22%3Atrue%7D%5D%2C%22tipo%22%3A3%2C%22descricaoAgrupamentoNulo%22%3A%22%22%2C%22icone%22%3Anull%2C%22iconesAgrupamento%22%3A%5B%5D%2C%22tipoIcone%22%3Anull%2C%22condicionais%22%3Anull%7D%2C%7B%22nome%22%3A%5B%22formaPagamentoCodigo%22%2C%22formaPagamentoAno%22%2C%22formaPagamentoSequencia%22%5D%2C%22descritivo%22%3A%5B%7B%22nome%22%3A%22formapagamentoDescricao%22%2C%22mostraTitulo%22%3Atrue%2C%22quebraLinha%22%3Afalse%2C%22visivel%22%3Atrue%7D%5D%2C%22tipo%22%3A3%2C%22descricaoAgrupamentoNulo%22%3A%22%22%2C%22icone%22%3Anull%2C%22iconesAgrupamento%22%3A%5B%5D%2C%22tipoIcone%22%3Anull%2C%22condicionais%22%3Anull%7D%5D%7D&autoId=1&monitor=0&flush=0&ip=200.207.65.19&versaoSistema=v2&portalCidadao=true&portalAutoatendimento=true`;
+
     try {
-        // Inicia o Chromium usando a pasta local como "cérebro"
-        context = await chromium.launchPersistentContext(userDataDir, {
-            headless: false, // Mantenha false até passarmos do captcha a primeira vez
-            viewport: { width: 1280, height: 720 },
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        const response = await fetch(url, {
+            method: "POST",
+            headers: {
+                "accept": "application/json, text/javascript, */*; q=0.01",
+                "content-type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "x-requested-with": "XMLHttpRequest",
+                // O cookie mágico que engana o sistema
+                "cookie": "solicitarCaptcha=0;"
+            },
+            body: payload
         });
 
-        // O launchPersistentContext já abre uma aba por padrão, vamos usá-la
-        const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
-
-        console.log("🌐 Acessando a página...");
-        await page.goto('https://palhoca.atende.net/autoatendimento/servicos/guias-de-iptu/detalhar/1', { waitUntil: 'domcontentloaded', timeout: 60000 });
-
-        console.log("💣 Destruindo pop-ups agressivamente...");
-        await page.evaluate(() => {
-            setInterval(() => {
-                document.querySelectorAll('.ui-dialog, .ui-widget-overlay, .modal-backdrop, [role="dialog"], #cookie-bar, .cookie-consent').forEach(el => el.remove());
-                document.body.style.overflow = 'auto';
-            }, 500);
-        });
-
-        console.log("⏳ Aguardando liberação. Se o Captcha aparecer, resolva-o manualmente desta vez...");
+        const data = await response.json();
+        console.log("✔️ Resposta da prefeitura recebida!");
         
-        // Espera até 2 minutos para você resolver a primeira vez com calma
-        const selectFiltro = page.locator('select[name="filtro"]');
-        await selectFiltro.waitFor({ state: 'attached', timeout: 120000 });
-
-        console.log("⚙️ Selecionando o filtro CPF/CNPJ...");
-        await page.evaluate(() => {
-            const select = document.querySelector('select[name="filtro"]');
-            if (select) {
-                for (let i = 0; i < select.options.length; i++) {
-                    if (select.options[i].text.includes('CPF/CNPJ')) {
-                        select.selectedIndex = i;
-                        select.dispatchEvent(new Event('change', { bubbles: true }));
-                        break;
-                    }
-                }
-            }
-        });
-        
-        await page.waitForTimeout(1000); 
-
-        console.log(`⌨️ Digitando o CPF...`);
-        await page.evaluate((cpfDigitado) => {
-            const input = document.querySelector('input[name="campo01"]');
-            if (input) {
-                input.value = cpfDigitado;
-                input.dispatchEvent(new Event('input', { bubbles: true }));
-                input.dispatchEvent(new Event('change', { bubbles: true }));
-            }
-        }, cpf);
-
-        await page.waitForTimeout(500);
-
-        console.log("🔍 Clicando em Consultar...");
-        await page.evaluate(() => {
-            const btn = document.querySelector('input[name="consultar"]');
-            if (btn) btn.click();
-        });
-
-        console.log("⏳ Aguardando resultado carregar (10 segundos)...");
-        await page.waitForTimeout(10000); 
-
-        res.json({ sucesso: true, status: 'Busca enviada com sucesso!' });
+        // Retornamos os dados brutos para o terminal por enquanto
+        res.json({ sucesso: true, dados_da_prefeitura: data });
 
     } catch (error) {
-        console.error('\n❌ Erro crítico:', error.message);
+        console.error('\n❌ Erro na requisição:', error.message);
         res.status(500).json({ erro: 'Falha ao buscar os dados na prefeitura.' });
-    } finally {
-        // IMPORTANTE: Agora precisamos fechar o contexto no final para que ele salve os cookies no disco corretamente
-        if (context) {
-            await context.close();
-        }
     }
 });
 
 const PORT = 3000;
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor rodando na porta ${PORT}`);
+    console.log(`🚀 Servidor API rodando na porta ${PORT}`);
 });
