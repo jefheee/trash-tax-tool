@@ -1,5 +1,6 @@
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
 const { chromium } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
 
@@ -9,6 +10,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// Define onde o navegador vai salvar a memória (cookies, captchas resolvidos)
+const userDataDir = path.join(__dirname, 'browser_data');
+
 app.post('/gerar-pix', async (req, res) => {
     const { cpf } = req.body;
 
@@ -16,43 +20,41 @@ app.post('/gerar-pix', async (req, res) => {
         return res.status(400).json({ erro: 'CPF é obrigatório.' });
     }
 
-    console.log(`\n[+] Iniciando robô para o CPF: ${cpf}`);
+    console.log(`\n[+] Iniciando robô (Sessão Persistente) para o CPF: ${cpf}`);
     
-    const browser = await chromium.launch({ headless: false }); 
-    const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    });
-    
-    const page = await context.newPage();
-
+    let context;
     try {
+        // Inicia o Chromium usando a pasta local como "cérebro"
+        context = await chromium.launchPersistentContext(userDataDir, {
+            headless: false, // Mantenha false até passarmos do captcha a primeira vez
+            viewport: { width: 1280, height: 720 },
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+        });
+
+        // O launchPersistentContext já abre uma aba por padrão, vamos usá-la
+        const page = context.pages().length > 0 ? context.pages()[0] : await context.newPage();
+
         console.log("🌐 Acessando a página...");
-        // Não esperamos a rede ficar ociosa, apenas o esqueleto do site carregar
         await page.goto('https://palhoca.atende.net/autoatendimento/servicos/guias-de-iptu/detalhar/1', { waitUntil: 'domcontentloaded', timeout: 60000 });
 
-        console.log("💣 Injetando código para DESTRUIR pop-ups automaticamente...");
-        // A OPÇÃO NUCLEAR: Um script rodando no fundo do site deletando qualquer modal a cada meio segundo
+        console.log("💣 Destruindo pop-ups agressivamente...");
         await page.evaluate(() => {
             setInterval(() => {
-                // Remove modais do jQuery UI, fundos escuros e banners
                 document.querySelectorAll('.ui-dialog, .ui-widget-overlay, .modal-backdrop, [role="dialog"], #cookie-bar, .cookie-consent').forEach(el => el.remove());
-                // Força a barra de rolagem voltar se o modal tiver travado a tela
                 document.body.style.overflow = 'auto';
             }, 500);
         });
 
-        console.log("⏳ Aguardando a tela liberar (se houver Captcha, você tem 90 segundos para resolver)...");
+        console.log("⏳ Aguardando liberação. Se o Captcha aparecer, resolva-o manualmente desta vez...");
         
-        // Agora esperamos o campo select aparecer e estar livre de bloqueios
+        // Espera até 2 minutos para você resolver a primeira vez com calma
         const selectFiltro = page.locator('select[name="filtro"]');
-        await selectFiltro.waitFor({ state: 'attached', timeout: 90000 });
+        await selectFiltro.waitFor({ state: 'attached', timeout: 120000 });
 
         console.log("⚙️ Selecionando o filtro CPF/CNPJ...");
-        // Forçamos a seleção via JavaScript nativo para driblar qualquer bloqueio visual restante
         await page.evaluate(() => {
             const select = document.querySelector('select[name="filtro"]');
             if (select) {
-                // Procura a opção CPF/CNPJ e seleciona
                 for (let i = 0; i < select.options.length; i++) {
                     if (select.options[i].text.includes('CPF/CNPJ')) {
                         select.selectedIndex = i;
@@ -63,10 +65,9 @@ app.post('/gerar-pix', async (req, res) => {
             }
         });
         
-        await page.waitForTimeout(1000); // Pausa para o site processar a mudança do filtro
+        await page.waitForTimeout(1000); 
 
         console.log(`⌨️ Digitando o CPF...`);
-        // Preenchemos via injeção direta de valor
         await page.evaluate((cpfDigitado) => {
             const input = document.querySelector('input[name="campo01"]');
             if (input) {
@@ -93,7 +94,10 @@ app.post('/gerar-pix', async (req, res) => {
         console.error('\n❌ Erro crítico:', error.message);
         res.status(500).json({ erro: 'Falha ao buscar os dados na prefeitura.' });
     } finally {
-        // await browser.close(); 
+        // IMPORTANTE: Agora precisamos fechar o contexto no final para que ele salve os cookies no disco corretamente
+        if (context) {
+            await context.close();
+        }
     }
 });
 
