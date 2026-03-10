@@ -19,18 +19,27 @@ app.post('/gerar-pix', async (req, res) => {
     const page = await browser.newPage();
 
     try {
-        await page.goto('https://palhoca.atende.net/autoatendimento/servicos/guias-de-iptu/detalhar/1');
+        console.log("🌐 Acessando a página da prefeitura...");
+        // networkidle garante que a página carregou completamente antes de agir
+        await page.goto('https://palhoca.atende.net/autoatendimento/servicos/guias-de-iptu/detalhar/1', { waitUntil: 'networkidle' });
 
-        // TODO: Aqui entrarão os seletores exatos (IDs/Classes) do site da prefeitura
-        // Exemplo do que faremos:
-        // await page.selectOption('select#id-do-filtro', 'cpf_cnpj');
-        // await page.fill('input#id-do-campo-cpf', cpf);
-        // await page.click('button#id-do-botao-lupa');
-        
-        // ... (lógica de clicar em Gerar PIX e copiar o texto) ...
+        console.log("⚙️ Selecionando o filtro CPF/CNPJ...");
+        // Seleciona a opção pelo texto visível no dropdown
+        await page.selectOption('select[name="filtro"]', { label: 'CPF/CNPJ' });
 
-        // Resposta temporária para testar se o servidor está funcionando
-        res.json({ sucesso: true, pix: '00020126580014br.gov.bcb.pix... (simulação)' });
+        console.log(`⌨️ Digitando o CPF: ${cpf}...`);
+        await page.fill('input[name="campo01"]', cpf);
+
+        console.log("🔍 Clicando em Consultar...");
+        await page.click('input[name="consultar"]');
+
+        console.log("⏳ Aguardando a resposta do servidor deles...");
+        // Vamos dar um pause de 5 segundos aqui apenas para você conseguir VER o que aconteceu na tela
+        // Na versão final, substituiremos isso por um gatilho que espera a tabela ou o botão do PIX aparecer
+        await page.waitForTimeout(5000); 
+
+        // Retorna sucesso por enquanto, já que ainda não mapeamos o clique no botão do PIX e a cópia do código
+        res.json({ sucesso: true, status: 'Busca realizada. Verifique o navegador aberto.' });
 
     } catch (error) {
         console.error('Erro na automação:', error);
