@@ -1,10 +1,8 @@
 const express = require('express');
 const cors = require('cors');
-// Importamos o playwright com o modo stealth
 const { chromium } = require('playwright-extra');
 const stealth = require('puppeteer-extra-plugin-stealth')();
 
-// Ativamos o disfarce
 chromium.use(stealth);
 
 const app = express();
@@ -18,70 +16,77 @@ app.post('/gerar-pix', async (req, res) => {
         return res.status(400).json({ erro: 'CPF é obrigatório.' });
     }
 
-    console.log(`[+] Iniciando robô (Stealth Mode) para o CPF: ${cpf}`);
+    console.log(`\n[+] Iniciando robô para o CPF: ${cpf}`);
     
-    // Abrimos o navegador disfarçado. Deixei false para vermos o que acontece.
+    // Deixando o navegador vísivel para testes
     const browser = await chromium.launch({ headless: false }); 
-    const page = await browser.newPage();
+    const context = await browser.newContext({
+        // Adicionando um User-Agent real do Windows para ajudar no disfarce do Captcha
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    });
+    
+    const page = await context.newPage();
 
     try {
         console.log("🌐 Acessando a página da prefeitura...");
-        await page.goto('https://palhoca.atende.net/autoatendimento/servicos/guias-de-iptu/detalhar/1', { waitUntil: 'networkidle' });
+        await page.goto('https://palhoca.atende.net/autoatendimento/servicos/guias-de-iptu/detalhar/1', { waitUntil: 'domcontentloaded' });
 
-        // --- LIDANDO COM OS OBSTÁCULOS (Pop-ups e Cookies) ---
-        console.log("🛡️ Procurando pop-ups para fechar...");
-        
-        // Tenta fechar o banner de Cookies se ele aparecer
+        // Tenta fechar o banner de cookies rapidamente
         try {
-            await page.waitForSelector('button:has-text("Aceitar")', { timeout: 3000 });
-            await page.click('button:has-text("Aceitar")');
-            console.log("✔️ Cookies aceitos.");
-        } catch (e) {
-            console.log("➖ Banner de cookies não encontrado.");
-        }
+            const btnCookie = page.locator('button:has-text("Aceitar")');
+            if (await btnCookie.isVisible({ timeout: 2000 })) {
+                await btnCookie.click();
+                console.log("✔️ Cookies aceitos.");
+            }
+        } catch (e) { }
 
-        // Tenta fechar a janela de "Aviso / Nota Nacional" (o botão X no canto)
+        // Estratégia agressiva para fechar modais (Aviso, Nota Nacional, etc)
+        console.log("🛡️ Pressionando 'Escape' para limpar pop-ups na tela...");
+        await page.keyboard.press('Escape');
+        await page.waitForTimeout(500);
+        await page.keyboard.press('Escape');
+
+        // Se o pop-up tiver um botão escrito "Fechar", tenta clicar nele
         try {
-            // O seletor '.ui-dialog-titlebar-close' costuma ser o 'X' desses popups jQuery/jQueryUI
-            await page.waitForSelector('.ui-dialog-titlebar-close', { timeout: 3000 });
-            await page.click('.ui-dialog-titlebar-close');
-            console.log("✔️ Pop-up de aviso fechado.");
-        } catch (e) {
-            console.log("➖ Pop-up de aviso não encontrado.");
-        }
-        
-        // Pequena pausa humana
-        await page.waitForTimeout(1000);
+            const btnFechar = page.locator('button:has-text("Fechar")');
+            if (await btnFechar.isVisible({ timeout: 1000 })) {
+                await btnFechar.click();
+            }
+        } catch (e) { }
 
-        // --- PREENCHENDO O FORMULÁRIO ---
+        console.log("⏳ Aguardando a liberação da interface (Até 60s se houver Captcha)...");
+        // O script vai pausar AQUI até que o select do filtro esteja realmente clicável na tela.
+        // Se o Captcha aparecer, resolva-o manualmente. O script vai esperar você terminar.
+        const selectFiltro = page.locator('select[name="filtro"]');
+        await selectFiltro.waitFor({ state: 'visible', timeout: 60000 });
+
         console.log("⚙️ Selecionando o filtro CPF/CNPJ...");
-        await page.selectOption('select[name="filtro"]', { label: 'CPF/CNPJ' });
+        // Usa a seleção por valor da option (1 = CPF/CNPJ na estrutura deles, ou tenta pelo label)
+        await selectFiltro.selectOption({ label: 'CPF/CNPJ' });
         
-        // Pausa humana
         await page.waitForTimeout(500);
 
-        console.log(`⌨️ Digitando o CPF: ${cpf}...`);
-        // O type simula digitação tecla por tecla, o que ajuda a evitar detecção
-        await page.type('input[name="campo01"]', cpf, { delay: 100 }); 
+        console.log(`⌨️ Digitando o CPF...`);
+        await page.locator('input[name="campo01"]').fill(cpf);
 
         console.log("🔍 Clicando em Consultar...");
-        await page.click('input[name="consultar"]');
+        await page.locator('input[name="consultar"]').click();
 
-        console.log("⏳ Aguardando resultado (10 segundos)...");
+        console.log("⏳ Aguardando resultado carregar (10 segundos)...");
         await page.waitForTimeout(10000); 
 
-        res.json({ sucesso: true, status: 'Busca realizada com Stealth Mode.' });
+        res.json({ sucesso: true, status: 'Busca realizada.' });
 
     } catch (error) {
-        console.error('Erro na automação:', error);
+        console.error('\n❌ Erro crítico:', error.message);
         res.status(500).json({ erro: 'Falha ao buscar os dados na prefeitura.' });
     } finally {
-        await browser.close();
+        // Comentado temporariamente para o navegador NÃO fechar e você poder ver onde o robô parou
+        // await browser.close(); 
     }
 });
 
 const PORT = 3000;
 app.listen(PORT, () => {
     console.log(`🚀 Servidor rodando na porta ${PORT}`);
-    console.log(`➡️  Aguardando requisições em http://localhost:${PORT}/gerar-pix`);
 });
