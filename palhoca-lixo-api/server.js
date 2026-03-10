@@ -29,53 +29,65 @@ app.post('/gerar-pix', async (req, res) => {
 
     try {
         console.log("🌐 Acessando a página da prefeitura...");
-        await page.goto('https://palhoca.atende.net/autoatendimento/servicos/guias-de-iptu/detalhar/1', { waitUntil: 'domcontentloaded' });
+        await page.goto('https://palhoca.atende.net/autoatendimento/servicos/guias-de-iptu/detalhar/1', { waitUntil: 'networkidle' });
 
-        // Tenta fechar o banner de cookies rapidamente
-        try {
-            const btnCookie = page.locator('button:has-text("Aceitar")');
-            if (await btnCookie.isVisible({ timeout: 2000 })) {
-                await btnCookie.click();
-                console.log("✔️ Cookies aceitos.");
-            }
-        } catch (e) { }
+        console.log("🛡️ Iniciando caça aos pop-ups...");
+        
+        // Loop rápido (tenta 5 vezes com 1 segundo de intervalo) para caçar pop-ups empilhados
+        for (let i = 0; i < 5; i++) {
+            // 1. Tenta fechar modais estilo "Aviso" (jQuery UI)
+            try {
+                const btnXModal = page.locator('.ui-dialog-titlebar-close');
+                if (await btnXModal.isVisible({ timeout: 500 })) {
+                    await btnXModal.click();
+                    console.log(`✔️ Modal tipo 1 fechado na tentativa ${i+1}.`);
+                }
+            } catch (e) {}
 
-        // Estratégia agressiva para fechar modais (Aviso, Nota Nacional, etc)
-        console.log("🛡️ Pressionando 'Escape' para limpar pop-ups na tela...");
-        await page.keyboard.press('Escape');
-        await page.waitForTimeout(500);
-        await page.keyboard.press('Escape');
+            // 2. Tenta fechar o pop-up "Nota Nacional" ou similares (procura pelo ícone X específico)
+            try {
+                // Esse seletor tenta achar o 'X' genérico do painel deles
+                const btnXGeneric = page.locator('button.close, .botao-fechar-modal, span:has-text("×"), [aria-label="Close"]');
+                if (await btnXGeneric.isVisible({ timeout: 500 })) {
+                    await btnXGeneric.click();
+                    console.log(`✔️ Modal genérico fechado na tentativa ${i+1}.`);
+                }
+            } catch (e) {}
 
-        // Se o pop-up tiver um botão escrito "Fechar", tenta clicar nele
-        try {
-            const btnFechar = page.locator('button:has-text("Fechar")');
-            if (await btnFechar.isVisible({ timeout: 1000 })) {
-                await btnFechar.click();
-            }
-        } catch (e) { }
+            // 3. Tenta aceitar os cookies
+            try {
+                const btnCookie = page.locator('button:has-text("Aceitar")');
+                if (await btnCookie.isVisible({ timeout: 500 })) {
+                    await btnCookie.click();
+                    console.log("✔️ Cookies aceitos.");
+                }
+            } catch (e) {}
 
-        console.log("⏳ Aguardando a liberação da interface (Até 60s se houver Captcha)...");
-        // O script vai pausar AQUI até que o select do filtro esteja realmente clicável na tela.
-        // Se o Captcha aparecer, resolva-o manualmente. O script vai esperar você terminar.
+            await page.waitForTimeout(1000); // Pausa antes de tentar ver se abriu outro pop-up
+        }
+
+        console.log("⏳ Aguardando a liberação da interface...");
         const selectFiltro = page.locator('select[name="filtro"]');
-        await selectFiltro.waitFor({ state: 'visible', timeout: 60000 });
-
-        console.log("⚙️ Selecionando o filtro CPF/CNPJ...");
-        // Usa a seleção por valor da option (1 = CPF/CNPJ na estrutura deles, ou tenta pelo label)
-        await selectFiltro.selectOption({ label: 'CPF/CNPJ' });
+        
+        // Se ainda assim travar, tentamos forçar o clique via JavaScript ignorando o que estiver na frente
+        await selectFiltro.waitFor({ state: 'attached', timeout: 30000 });
+        
+        console.log("⚙️ Selecionando o filtro CPF/CNPJ (Forçado)...");
+        await selectFiltro.selectOption({ label: 'CPF/CNPJ' }, { force: true });
         
         await page.waitForTimeout(500);
 
         console.log(`⌨️ Digitando o CPF...`);
-        await page.locator('input[name="campo01"]').fill(cpf);
+        // Force: true faz o Playwright digitar mesmo se o campo estiver visualmente coberto
+        await page.locator('input[name="campo01"]').fill(cpf, { force: true });
 
         console.log("🔍 Clicando em Consultar...");
-        await page.locator('input[name="consultar"]').click();
+        await page.locator('input[name="consultar"]').click({ force: true });
 
         console.log("⏳ Aguardando resultado carregar (10 segundos)...");
         await page.waitForTimeout(10000); 
 
-        res.json({ sucesso: true, status: 'Busca realizada.' });
+        res.json({ sucesso: true, status: 'Busca enviada.' });
 
     } catch (error) {
         console.error('\n❌ Erro crítico:', error.message);
